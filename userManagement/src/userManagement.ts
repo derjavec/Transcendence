@@ -14,9 +14,9 @@ export default async function (app: Fastify) {
   app.post('/verify', async(req, reply) =>{
     const { email, password } = req.body
     const db = await openDb();
-    try{
-        
-        if(!email || ! password){
+    try {
+
+        if (!email || !password) {
             throw new Error('Email and password required');
         }
 
@@ -31,7 +31,7 @@ export default async function (app: Fastify) {
             throw new Error('Invalid password');
         }
         return reply.code(201).send({success: true, userId: user.userId});
-    }catch(error){
+    } catch(error){
         console.error("error verifying user: ", error);
         return reply.code(500).send({success: false, message: 'error verifying user'});
     }
@@ -103,9 +103,13 @@ export default async function (app: Fastify) {
         let opponentName = 'Unknown';
         const opponentId = String(row.player1) === String(userId) ? row.player2 : row.player1;
 
-        if (opponentId.startsWith('AI')) {
-          opponentName = '🤖 AI';
-        } else {
+        if (row.mode === "soloIA") {
+          opponentName = "🤖 AI";
+        } 
+        else if (row.mode === "solo") {
+          opponentName = "Player2";
+        }
+        else {
           const opp = await db.get('SELECT name FROM users WHERE userId = ?', opponentId);
           opponentName = opp?.name || `User ${opponentId}`;
         }
@@ -142,7 +146,6 @@ export default async function (app: Fastify) {
         console.log(`❌ User not found for email: ${email}`);
         return reply.status(404).send({ message: 'User not found' });
     }
-    console.log(`✅ User found: ${JSON.stringify(userMail)}`);
     return {
         userId: userMail.userId,
         name: userMail.name,
@@ -155,7 +158,6 @@ export default async function (app: Fastify) {
 
   app.post('/register', async(req, reply) => {
       
-      console.log("Tentative d'enregistrement de l'utilisateur", req.body);
       const db = await openDb();
       const { name, email, password, enable2FA } = req.body;
 
@@ -177,7 +179,6 @@ export default async function (app: Fastify) {
         if (!stats) {
           return reply.status(500).send({ message: 'Failed to create user stats' });
         }
-        console.log("Utilisateur enregistré avec succès", result);
 
         return reply.status(201).send({ success: true, message: 'User created successfully', userId: result.lastID });
     } catch(error) {
@@ -219,9 +220,7 @@ export default async function (app: Fastify) {
       }
 
       if (password) {
-        console.log("mdp avant hash ", password);
         const hashedPassword = await hashUpdatedPassword(password);
-        console.log("mdp après hash ", hashedPassword);
         if (!hashedPassword) {
           return reply.status(500).send({ message: 'Failed to hash password' });
         }
@@ -271,7 +270,6 @@ export default async function (app: Fastify) {
           console.log(`❌ User not found for id: ${id}`);
           return reply.status(404).send({ message: 'User not found' });
       }
-      console.log(`user successfully deleted`);
       return reply.send({ message: 'User deleted successfully' })
 
   });
@@ -400,21 +398,18 @@ export default async function (app: Fastify) {
     const { id } = req.params as { id: string };
     const { image } = req.body as { image: string };
 
-    console.log('Image reçue:', image);
-
-    if(!image || typeof image !== "string"){
-      return reply.status(400).send({ error: "Format base64 incorrect."});
+    if (!image || typeof image !== "string") {
+      return reply.status(400).send({ error: "Format base64 incorrect." });
     }
 
     const isValid = await isBase64ImageValid(image);
     if (!isValid) {
-      console.log('❌ Image rejetée : format base64 ou type MIME invalide.');
       return reply.status(400).send({ error: "Image base64 invalide ou format incorrect." });
     }
 
     const matches = image.match(/^data:(image\/\w+);base64,(.+)$/);
-    if(!matches) {
-      return reply.status(400).send({error: "Format base 64 incorrect."});
+    if (!matches) {
+      return reply.status(400).send({ error: "Format base 64 incorrect." });
     }
 
     const base64Data = matches[2];
@@ -455,8 +450,8 @@ export default async function (app: Fastify) {
     const { id } = req.params;
     const { language, languageMode } = req.body;
 
-    if(!language || !languageMode) {
-      return reply.status(400).send( { message: 'Language and language mode are required'});
+    if (!language || !languageMode) {
+      return reply.status(400).send({ message: 'Language and language mode are required' });
     }
 
     try {
@@ -505,4 +500,3 @@ async function hashUpdatedPassword(password: string): Promise<string | null> {
         return null;
     }
 }
-// server.ts

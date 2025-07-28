@@ -15,6 +15,10 @@ class Setup2FADatabase {
             filename: dbPath,
             driver: sqlite3.Database
         });
+        // eviter data race 
+        await this.db.exec("PRAGMA journal_mode = WAL"); // Write-Ahead Logging -> envoi les writes dans un fichier de log
+        await this.db.exec("PRAGMA synchronous = NORMAL"); // mode d'ecriture NORMAL = bon equilibre entre securite et vitesse
+        await this.db.configure("busyTimeout", 5000); // attendre 5secs avant de lancer l'erreur SQLITE_BUSY
 
         // Nettoyage regulier de la base
         setInterval(() => this.cleanupExpiredData(), 60 * 60 * 1000);

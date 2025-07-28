@@ -1,4 +1,4 @@
-//updateDB.ts
+//updateDB.ts (matchmaking)
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 
@@ -9,17 +9,29 @@ export async function initDB() {
     filename: "/app/shared/database.db",
     driver: sqlite3.Database
   });
+    // eviter data race 
+  await db.exec("PRAGMA journal_mode = WAL"); // Write-Ahead Logging -> envoi les writes dans un fichier de log
+  await db.exec("PRAGMA synchronous = NORMAL"); // mode d'ecriture NORMAL = bon equilibre entre securite et vitesse
+  await db.configure("busyTimeout", 5000); // attendre 5secs avant de lancer l'erreur SQLITE_BUSY
 }
 
 export function getDB() {
   return db;
 }
 
-export async function NewSoloMatch(matchId: string, userId: string, aiId: string) {
+export async function NewSoloMatch(matchId: string, userId: string, aiId: string, mode: string) {
   await db.run(
     `INSERT INTO matches (matchId, player1, player2, status, mode)
      VALUES (?, ?, ?, ?, ?)`,
-    matchId, userId, aiId, "active", "solo"
+    matchId, userId, aiId, "active", mode
+  );
+}
+
+export async function NewOneToOneMatch(matchId: string, p1: string, p2: string) {
+  await db.run(
+    `INSERT INTO matches (matchId, player1, player2, status, mode)
+     VALUES (?, ?, ?, ?, ?)`,
+    matchId, p1, p2, "active", "1to1"
   );
 }
 
@@ -101,7 +113,7 @@ export async function updateMatchStats(
     loserScore: number,
     reason: "completed" | "forfeit"
 ) {
-    //console.log(`📦 Updating match ${matchId}. Reason: ${reason}`);
+   // console.log(`📦 Updating match ${matchId}. Reason: ${reason}`);
 
     const result = await db.run(`
         UPDATE matches SET

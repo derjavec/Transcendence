@@ -55,7 +55,7 @@ services:
     volumes:
       - shared_data:/app/shared
     expose:
-     - "4500"
+     - "4500:4500"
     init: true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://gateway-ws:4500/health/gateway"]
@@ -109,6 +109,8 @@ services:
       - pong
     volumes:
       - shared_data:/app/shared
+    depends_on:
+      - sqlite
     expose:
       - "4003"
     init: true
@@ -158,6 +160,7 @@ services:
     depends_on:
       - gateway-api
       - gateway-ws
+      - sqlite
     expose:
       - "4004"
     init: true
@@ -167,6 +170,29 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    restart: on-failure
+
+  tournament:
+    container_name: tournament
+    build: ./Tournament
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    depends_on:
+       - gateway-api
+       - gateway-ws
+       - sqlite
+    expose:
+       - "4007"
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://gateway-api:4000/health/gateway"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: on-failure
 
 # FriendZone
   friendzone:

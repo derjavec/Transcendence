@@ -7,6 +7,8 @@ import {
 	RemoveFriendPayload
 } from "../types/models";
 
+let friendsRefreshIntervalId: number | undefined;
+
 // Fonction pour charger la liste d'amis
 export async function loadFriendsList() {
 	const userId = Number(sessionStorage.getItem("userId"));
@@ -21,7 +23,7 @@ export async function loadFriendsList() {
 				"Content-Type": "application/json"
 			}
 	  	});
-		console.log("Response:", response);
+		// console.log("Response:", response); // DEBUG
 
 		if (!response.ok) {
 			throw new Error(`Failed to load friends list: ${response.status}`);
@@ -31,7 +33,7 @@ export async function loadFriendsList() {
 		
 		const friends: UserSearchResult[] = Array.isArray(responseData) ? responseData : [];
 
-		console.log("Friends data:", friends);
+		// console.log("Friends data:", friends); //DEBUG
 
 		if (friends.length === 0) {
 			friendsListElement.innerHTML = `
@@ -141,7 +143,7 @@ export async function loadFriendRequests() {
 		}
 		// DEBUG: Vérifier si userId est bien récupéré
 		const requests: FriendRequest[] = await response.json();
-		console.log("Friend requests object example:", requests[0]);
+		// console.log("Friend requests object example:", requests[0]); //DEBUG
 	  
 	  // Mettre à jour le compteur de demandes
 	  if (requests.length > 0) {
@@ -544,10 +546,14 @@ export function initFriendsEventHandlers() {
 	document.getElementById("tabRequests")?.addEventListener("click", () => switchTab("friendRequests"));
 
 	// Démarrer le rafraichissement automatique (toutes les 30s)
-	const refreshIntervalId = startFriendsStatusAutoRefresh();
-	
-	// Arreter le rafraichissement automatique si l'utilisateur quitte la page
-	window.addEventListener("beforeunload", () => {
-		clearInterval(refreshIntervalId);
-	});
+	friendsRefreshIntervalId = startFriendsStatusAutoRefresh();
   }
+
+
+  // Fonction pour arreter le rafraichissement automatique si l'utilisateur quitte la page
+export function stopFriendsStatusAutoRefresh() {
+  if (friendsRefreshIntervalId) {
+    clearInterval(friendsRefreshIntervalId);
+    friendsRefreshIntervalId = undefined;
+  }
+}

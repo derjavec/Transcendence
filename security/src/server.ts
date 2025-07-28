@@ -20,7 +20,7 @@ if (!jwtSecret) {
 fastify.register(fastifyJwt, {
   secret: jwtSecret,
   sign: {
-    expiresIn: '15m', // Token expiration time
+    expiresIn: '60m', // Token expiration time
   },
   verify: { algorithms: ['HS256'] }, // Specify the algorithm used for signing
 });
@@ -69,6 +69,27 @@ fastify.decorate("authenticate", async (request, reply) => {
         return reply.status(401).send({ error: "Token is outdated" });
       }
     }
+
+    // 🔒 SÉCURITÉ : Vérifier si l'utilisateur est vraiment connecté en base
+    try {
+      const connectionStatusResponse = await fetch(`http://gateway-api:4000/api/users/isonline/${userId}`);
+      if (connectionStatusResponse.ok) {
+        const connectionData = await connectionStatusResponse.json();
+        const isUserOnline = Boolean(connectionData.status);
+        
+        if (!isUserOnline) {
+          console.warn(`🚨 SECURITY: User ${userId} has valid token but is offline in database - denying access`);
+          return reply.status(401).send({ error: "Session invalidated - user not connected" });
+        }
+      } else {
+        console.error(`❌ Failed to check connection status for user ${userId}`);
+        return reply.status(401).send({ error: "Unable to verify connection status" });
+      }
+    } catch (connectionErr) {
+      console.error(`❌ Error checking connection status for user ${userId}:`, connectionErr);
+      return reply.status(401).send({ error: "Connection verification failed" });
+    }
+  
   } catch (err) {
     reply.code(401).send({error: "Unauthorized", details: err.message});
   }

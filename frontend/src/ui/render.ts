@@ -1,7 +1,9 @@
 //render.ts
-import { send, socket } from "../ws/ws-client.js";
+import { socket } from "../ws/ws-client.js";
 import * as Actions from "../ws/ws-actions.js";
 import * as Canvas from "./drawCanvas.js";
+import { homeView } from "./views/viewHome.js";
+import { lockScroll, unlockScroll } from "./utils-lockScroll.js";
 
 let isNewGame = true;
 let intervalId: number;
@@ -36,7 +38,7 @@ export function updateGameButtons(
 		btn.onclick = onClick;
 	}
 
-	if (mode === "tournament" && joinBtn) {
+	if (mode === "1to1" && joinBtn) {
 		const btnLabel = (pendingLabel || label).replace("Game", "Match");
 		joinBtn.textContent = btnLabel;
 		joinBtn.disabled = isMatchStarted;
@@ -50,24 +52,55 @@ export async function startGame() {
 	isNewGame = true;
 	isStarting = true;
 	console.log("GAME STARTING...");
+	lockScroll();
 
 	updateGameButtons(() => {}, true);
 	const mode = sessionStorage.getItem("mode");
 	const settings = JSON.parse(sessionStorage.getItem("settings") || "{}");
-	const paddleSize = settings.paddleSize || "small";
-	if (mode === "solo" || mode === "soloIA") {
-	  const btn = document.getElementById("startGameBtn") as HTMLButtonElement;
-	  if (btn) {
-		btn.textContent = "Game Started!";
-		btn.disabled = true;
-	  }
+	const canvasWrapper = document.getElementById("canvasWrapper");
+	if (canvasWrapper) canvasWrapper.classList.remove("hidden");	
+	if (mode === "solo" || mode === "soloIA") {	
+		const btn = document.getElementById("startGameBtn") as HTMLButtonElement;
+		if (btn) {
+			btn.textContent = "Game Started!";
+			btn.disabled = true;
+		}
 	}
-	if (mode === "tournament") {
-	  const btn = document.getElementById("joinMatchBtn") as HTMLButtonElement;
-	  if (btn) {
+	if (mode === "1to1") {
+		const btn = document.getElementById("joinMatchBtn") as HTMLButtonElement;
+		if (btn) {
 		btn.textContent = "Match Started!";
 		btn.disabled = true;
 	  }
+	}
+
+	if (mode === "Tournament") {
+		const tournamentName = sessionStorage.getItem("tournamentName") || "Tournament";
+		const round = sessionStorage.getItem("round") || "1";
+
+		const container = document.getElementById("tournamentContainer");
+		if (container) container.classList.add("hidden");
+
+		const messages = document.getElementById("messages");
+		if (messages) messages.innerHTML = "";
+
+		const waitingMsg = document.getElementById("waitingMessage");
+		if (waitingMsg) waitingMsg.classList.add("hidden");
+
+		const gameSection = document.getElementById("gameSection");
+		if (gameSection) {
+			gameSection.classList.remove("hidden");
+
+			const tournamentTitle = document.getElementById("tournamentTitle");
+			if (tournamentTitle) tournamentTitle.textContent = tournamentName;
+
+			const roundTitle = document.getElementById("roundTitle");
+			if (roundTitle) roundTitle.textContent = `Round ${round}`;
+
+			const startBtn = document.getElementById("startGameBtn") as HTMLButtonElement;
+			if (startBtn) startBtn.classList.add("hidden");
+			
+		}
 	}
 
 	if (intervalId) {
@@ -82,11 +115,10 @@ export async function startGame() {
 	const ctx = canvas.getContext("2d");
 	if (!ctx)
 		return;
-	resizeCanvas(canvas);
+	resizeCanvas(ctx, canvas);
 	await Actions.ResumeGame(canvas);
-	send("game:getState", {});     
 
-	window.addEventListener("resize", () => resizeCanvas(canvas));
+	window.addEventListener("resize", () => resizeCanvas(ctx, canvas));
 
 	document.addEventListener("keydown", (event) => {
 		pressedKeys.add(event.key);
@@ -108,66 +140,128 @@ export async function startGame() {
 		});
 		spaceListenerAdded = true;
 	}
-
 	intervalId = setInterval(() =>updateGame(ctx, canvas, settings), 1000 / 60);
 }
 
 export function stopGame() {
+	unlockScroll();
+	const mode = sessionStorage.getItem("mode");
+	const canvasWrapper = document.getElementById("canvasWrapper");	
+	if (canvasWrapper)
+		canvasWrapper.classList.add("hidden");
+
+	if (mode === "Tournament") {
+		const userId = Number(sessionStorage.getItem("userId"));
+		let winnerId = sessionStorage.getItem("winner");
+		const startBtn = document.getElementById("startGameBtn") as HTMLButtonElement;
+		const victoryScreen = document.getElementById("victoryScreen");
+		const loseScreen = document.getElementById("loseScreen");
+		const waitingMessage = document.getElementById("waitingMessage");
+		if (waitingMessage) {
+			waitingMessage.classList.add("hidden");}
+		if (startBtn) startBtn.classList.remove("hidden");
+		if (userId === Number(winnerId)) {
+			if (victoryScreen) victoryScreen.classList.remove("hidden");
+			if (loseScreen)loseScreen.classList.add("hidden");
+			
+			updateGameButtons(() => {
+				Actions.sendTournamentRoundData();
+				sessionStorage.removeItem("matchId");
+				sessionStorage.removeItem("side");
+				let round = sessionStorage.getItem("round");
+				const nextRound = Number(round || "1") + 1;
+				const roundTitle = document.getElementById("roundTitle");
+				if (roundTitle) {
+					roundTitle.textContent = `Round ${nextRound}`;
+				}
+				sessionStorage.setItem("round", String(nextRound));
+				if (canvasWrapper) canvasWrapper.classList.add("hidden");
+				if (startBtn) startBtn.classList.add("hidden");
+				if (victoryScreen) victoryScreen.classList.add("hidden");
+				if (loseScreen) loseScreen.classList.add("hidden");
+				if (waitingMessage) waitingMessage.classList.remove("hidden");				
+				sessionStorage.removeItem("winner");
+				winnerId = null;
+			}, false, "Continue");			
+		} else {
+			sessionStorage.removeItem("matchId");
+			sessionStorage.removeItem("side");
+			if (loseScreen)loseScreen.classList.remove("hidden");		
+			if (victoryScreen)victoryScreen.classList.add("hidden");
+			
+			updateGameButtons(() => {
+				hasShownGameOver = false;
+				isStarting = false;
+				homeView();
+			}, false, "Back to Home");
+		}
+	} else {
+		sessionStorage.removeItem("matchId");
+		sessionStorage.removeItem("side");
+		updateGameButtons(async () => {
+			console.log("🔄 Restarting game...");
+			hasShownGameOver = false;
+			isStarting = false;
+
+			const userId = Number(sessionStorage.getItem("userId"));
+			const iaToggle = document.getElementById("iaToggle") as HTMLInputElement;
+			if (iaToggle)
+				iaToggle.disabled = false;
+
+			if (mode === "1to1") {
+				updateGameButtons(() => {}, true, "Searching for opponent...");
+				await Actions.joinMatchmaking(userId);
+			} else {
+				const iaMode = iaToggle?.checked;
+				sessionStorage.setItem("mode", iaMode ? "soloIA" : "solo");
+				iaToggle.disabled = true;
+				await Actions.createSoloMatch(userId);
+			}
+		}, false);
+	}
+
 	if (intervalId) {
 		clearInterval(intervalId);
 		intervalId = 0;
 	}
-	sessionStorage.removeItem("matchId");
-	sessionStorage.removeItem("side");
 	spaceListenerAdded = false;
-
 
 	Actions.gameDisconnect(socket);
 	Actions.resetGameFlags();
 	console.log("🛑 Game stopped");
-	const mode = sessionStorage.getItem("mode");
-	const userId = Number(sessionStorage.getItem("userId"));
-	const iaToggle = document.getElementById("iaToggle") as HTMLInputElement;
-	if(iaToggle)
-		iaToggle.disabled = false;
-	updateGameButtons(async () => {
-		console.log("🔄 Restarting game...");
-		hasShownGameOver = false;
-		isStarting = false;
-		
-			
-		if (mode === "tournament")
-			await Actions.joinMatchmaking(userId);
-		else{
-			const iaMode = iaToggle?.checked;
-			sessionStorage.setItem("mode", iaMode ? "soloIA" : "solo");
-			const mode =sessionStorage.getItem("mode");
-			console.log("mode en stop :", mode);
-			iaToggle.disabled = true;
-			await Actions.createSoloMatch(userId);
-		}
-	}, false);
 }
+
+
 
 let lastScoreDifference = 0;
 let justScored = false; 
 
 async function updateGame(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, settings :any) {
 	const rawState = Actions.getLatestState();
-	if (!rawState) return;
-
+	if (!rawState) 
+		return;
 	const state = scaleStateToCanvas(rawState, canvas, settings);
-
 	if (state.isGameOver && !isStarting) {
 		if (!hasShownGameOver) {
 			clearInterval(intervalId);
-			Canvas.drawGameOver(ctx, canvas, state);
+			const userId = Number(sessionStorage.getItem("userId"));
+			const side = sessionStorage.getItem("side");
+			const myScore = side === "left" ? state.score.left : state.score.right;
+	
+			if (myScore === 5) 
+				sessionStorage.setItem("winner", String(userId));
+
+			 Canvas.drawGameOver(canvas,state);
 			hasShownGameOver = true;
 			stopGame();
+			const mode = sessionStorage.getItem("mode");
+			const winner = sessionStorage.getItem("winner");
+			if (mode === "Tournament" && !winner){
+				Actions.tournamentDisconnect(socket);}
 		}
 		return;
 	}
-
+	
 	if (!Actions.hasShownForfeit())
 		await Actions.checkForfeit();
 
@@ -181,11 +275,10 @@ async function updateGame(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasEleme
 	} else {
 		justScored = false;
 	}
-	
-	handlePaddleMovement(canvas, justScored);
+	const isPaused = state.isPaused;
+	handlePaddleMovement(canvas, justScored, isPaused);
 	Canvas.drawGame(ctx, canvas, state, settings, leftPaddleY, rightPaddleY);
 }
-
 
 function scaleStateToCanvas(state: any, canvas: HTMLCanvasElement, settings :any) {
 
@@ -198,8 +291,6 @@ function scaleStateToCanvas(state: any, canvas: HTMLCanvasElement, settings :any
 
 	const scaledLeftY = state.paddles.leftY * scaleY;
 	const scaledRightY = state.paddles.rightY * scaleY;
-	const paddleSize = settings.paddleSize;
-	const paddleHeight = paddleSize === "large" ? canvas.height * 0.25 : canvas.height * 0.15;
 
 	return {
 		...state,
@@ -218,7 +309,7 @@ function scaleStateToCanvas(state: any, canvas: HTMLCanvasElement, settings :any
 	
 }
 
-function handlePaddleMovement(canvas: HTMLCanvasElement, justScored:boolean) {
+function handlePaddleMovement(canvas: HTMLCanvasElement, justScored:boolean, isPaused:boolean) {
     const settings = JSON.parse(sessionStorage.getItem("settings") || "{}");
     const paddleSpeed = settings.paddleSpeed || "normal";
     const step = paddleSpeed === "fast" ? canvas.height * 0.04 : canvas.height * 0.025;
@@ -242,7 +333,9 @@ function handlePaddleMovement(canvas: HTMLCanvasElement, justScored:boolean) {
 		const scaledY = paddleY * (BASE_HEIGHT / canvas.height);
 		Actions.sendPaddleMovement(side, scaledY, socket);
 	}
-
+	if (isPaused){
+		return;
+	}
 	if (side === "left") {
 		if (pressedKeys.has("w") || pressedKeys.has("W")) {
 			leftPaddleY = Math.max(0, leftPaddleY - step);
@@ -270,7 +363,7 @@ function handlePaddleMovement(canvas: HTMLCanvasElement, justScored:boolean) {
 
 let lastCanvasWidth = 719;
 let lastCanvasHeight = 359;
-export function resizeCanvas(canvas: HTMLCanvasElement) {
+export function resizeCanvas(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) {
 	const container = canvas.parentElement;
 	if (container) {
 		canvas.width = container.clientWidth;

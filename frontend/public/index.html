@@ -8,15 +8,16 @@
     <script type="module" src="/main.js"></script>
     <link rel="stylesheet" href="/output.css" />
   </head>
-  <body class="relative overflow-hidden">
+  <body class="relative overflow-y-auto">
 
     <nav class="relative z-10 bg-pongLight py-2 px-2 shadow-lg border-b-2 border-matrix">
-      <div class="container mx-auto flex justify-between items-center">
-        <div class="text-2xl font-arcade text-matrix">Transcendence</div>
-        <div class="space-x-6 font-arcade">
+      <div class="max-w-screen-xl mx-auto flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+        <div class="text-2xl font-arcade text-matrix text-center sm:text-left">Transcendence</div>
+        <div class="flex flex-wrap justify-center sm:justify-end items-center gap-2 font-arcade text-sm">
           <a href="/" data-link id="nav-home" class="text-pongGray hover:text-matrix transition">Home</a>
           <a href="/solo" data-link id="nav-solo" class="text-pongGray hover:text-matrix transition">Solo</a>
-          <a href="/tournament" data-link id="nav-tournament" class="text-pongGray hover:text-matrix transition">Tournament</a>
+          <a href="/1to1" data-link id="nav-1to1" class="text-pongGray hover:text-matrix transition">1vs1</a>
+          <a href="/Tournament" data-link id="nav-tournament" class="text-pongGray hover:text-matrix transition">Tournament</a>
           <a href="/profile" data-link  id="nav-profile" class="text-pongGray hover:text-matrix transition">👤</a>
           <a href="/settings" data-link id="nav-settings" class="text-pongGray hover:text-matrix transition">⛭</a>
           <button id="authBtn" class="bg-matrix text-black px-3 py-1 rounded hover:bg-green-400 transition"></button>

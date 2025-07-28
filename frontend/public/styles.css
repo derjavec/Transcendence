@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+#app {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: none;
+
+}
+
 @font-face {
   font-family: 'Press Start 2P';
   src: url('/PressStart2P-Regular.ttf') format('truetype');
@@ -37,6 +44,7 @@
 
 body {
   @apply font-arcade bg-pongDark text-gray-400 text-sm;
+  overflow-y: auto;
 }
 
 input, select, button {

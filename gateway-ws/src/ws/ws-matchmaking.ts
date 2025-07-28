@@ -2,57 +2,30 @@
 import WebSocket from 'ws';
 
 let matchmakingSocket: WebSocket | null = null;
+
 const pendingClients = new Map<string, WebSocket>();
 const playerMatchMap = new Map<string, string>();
 
 // communication depuis FRONTEND
 export function handleMatchmakingMessage(message: any, clientWs: WebSocket, userId: string) {
-    pendingClients.set(userId, clientWs);
-
+     //console.log(`📩 handleMatchmakingMessage called for user ${userId} with type ${message.type}`);
+   
     if (!matchmakingSocket || matchmakingSocket.readyState !== WebSocket.OPEN) {
         console.warn('⚠️ Matchmaking socket not ready, message not sent');
         return;
     }
+    
+    if (!pendingClients.has(String(userId))) {
+     // console.log(`🧩 Setting pending client for user ${userId}`);
+      pendingClients.set(String(userId), clientWs);
+    }
+    
 
-    let payload: any;
-
-    switch (message.type) {
-        case 'matchmaking:join':
-            payload = { type: 'JOIN_MATCH', userId };
-            break;
-        case 'matchmaking:createSoloMatch':
-            payload = { type: 'INIT_SOLO', userId };
-            break;
-        case 'matchmaking:disconnect':
-            payload = { type: 'DISCONNECT', userId };
-            playerMatchMap.delete(userId);
-            break;
-        case 'matchmaking:getPlayerNames':
-            payload = { type: 'GET_NAMES', matchId: message.matchId };
-            break;
-        case 'matchmaking:gameOver':
-            payload = {
-                type: 'END_MATCH',
-                matchId: message.matchId,
-                winnerId: message.winnerId,
-                loserId: message.loserId,
-                winnerScore: message.winnerScore,
-                loserScore: message.loserScore
-            };
-            playerMatchMap.delete(message.winnerId);
-            playerMatchMap.delete(message.loserId);
-            break;
-        case "matchmaking:isForfeit":
-            payload = {
-                type: "IS_FORFEIT",
-                matchId: message.matchId
-            };
-            break;
-        default:
-            console.warn(`🟡 Unknown matchmaking message type from frontend: ${message.type}`);
-            return;
+    if (message.type === 'matchmaking:disconnect') {
+        playerMatchMap.delete(String(userId));
     }
 
+    const payload = { ...message, type: message.type.replace("matchmaking:", ""), userId };
     matchmakingSocket.send(JSON.stringify(payload));
 }
 
@@ -75,71 +48,174 @@ export function getOpponentId(userId: string): Promise<string> {
     });
 }
 
-// communication depuis MATCHMAKING
-export function setMatchmakingSocket(ws: WebSocket) {
-    matchmakingSocket = ws;
-    ws.on('message', (raw) => {
-        const message = JSON.parse(raw.toString());
-
-        if (message.type === 'matchmaking:matchFound' || message.type === 'matchmaking:soloMatchReady') {
-            const { matchId, players } = message;
-
-            for (const player of players) {
-                const clientWs = pendingClients.get(player.userId);
-                playerMatchMap.set(player.userId, matchId);
-
-                if (clientWs && clientWs.readyState === WebSocket.OPEN) {
-                    const opponent = players.find(p => p.userId !== player.userId);
-                    const messageToSend = {
-                        type: 'matchmaking:matchFound',
-                        matchId,
-                        side: player.side,
-                        userId: player.userId,
-                        opponentId: opponent?.userId || null
-                    };
-                    clientWs.send(JSON.stringify(messageToSend));
-                } else {
-                    console.warn(`⚠️ Client ${player.userId} not found or socket closed`); // Debug
-                }
-                pendingClients.delete(player.userId);
-            }
-        }
-
-        if (message.type === 'matchmaking:playerNames' || message.type === 'matchmaking:playerNamesError') {
-
-            for (const [userId, clientWs] of pendingClients.entries()) {
-                if ((String(userId) === message.player1Id || String(userId) === message.player2Id) && clientWs && clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify(message));
-                    }
-                }
-        }
-        
-        if (message.type === 'matchmaking:opponentId' || message.type === 'matchmaking:opponentError') {
-            for (const [userId, clientWs] of pendingClients.entries()) {
-                if (clientWs && clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify(message));
-                }
-            }
-        }
-        if (message.type === "matchmaking:forfeitStatus") {
-            const allSockets = Array.from(pendingClients.entries());
-
-            for (const [userId, clientWs] of allSockets) {
-                if (playerMatchMap.get(userId) === message.matchId) {
-                    const forfeitMsg = JSON.stringify({
-                        type: "matchmaking:forfeitStatus",
-                        matchId: message.matchId,
-                        isForfeit: message.isForfeit,
-                    });
-                    clientWs.send(forfeitMsg);
-                }
-            }
-        }
-    });
-
-    ws.on('close', () => {
-        console.warn('Matchmaking WS closed...');
-        matchmakingSocket = null;
-    });
-    ws.on('error', (err) => {});
+// fonction fallback dans le cas ou frontend n'arrive pas a envoyer "DISCONNECT" lorsqu'on ferme la fenetre
+export function onClientDisconnect(userId: string) {
+    playerMatchMap.delete(String(userId));
+    pendingClients.delete(String(userId));
+    matchmakingSocket?.send(JSON.stringify({ type: "DISCONNECT", userId }));
+  
 }
+
+export function setMatchmakingSocket(ws: WebSocket) {
+  matchmakingSocket = ws;
+
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 100;
+
+  async function waitForClientSocket(playerId: string): Promise<WebSocket | null> {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const clientWs = pendingClients.get(playerId);
+      if (clientWs && clientWs.readyState === WebSocket.OPEN) {
+        return clientWs;
+      }
+      await new Promise((res) => setTimeout(res, RETRY_DELAY_MS));
+    }
+    return null;
+  }
+
+  ws.on("message", async (raw) => {
+    const message = JSON.parse(raw.toString());
+    const { type, matchId, players } = message;
+
+    if (["matchmaking:matchFound", "matchmaking:soloMatchReady", "matchmaking:tournamentMatchReady"].includes(type)) {
+      for (const player of players) {
+        const playerId = String(player.userId);
+        playerMatchMap.set(playerId, String(matchId));
+
+        const clientWs = await waitForClientSocket(playerId);
+        if (clientWs) {
+          const opponent = players.find((p) => String(p.userId) !== playerId);
+          const payload = {
+            type: 'matchmaking:matchFound',
+            matchId,
+            side: player.side,
+            userId: player.userId,
+            opponentId: opponent?.userId || null
+          };
+
+          clientWs.send(JSON.stringify(payload));
+          pendingClients.delete(playerId);
+        } else {
+          // console.warn(`❌ Could not retrieve WS for userId=${playerId} after ${MAX_RETRIES} attempts`); // DEBUG
+
+          const fallbackClient = pendingClients.get(playerId);
+          if (fallbackClient && fallbackClient.readyState === WebSocket.OPEN) {
+            fallbackClient.send(JSON.stringify({
+              type: 'matchmaking:connectionError',
+              userId: playerId,
+              message: 'No se pudo establecer la conexión WebSocket para el torneo.'
+            }));
+            fallbackClient.close(4000, "Connection failed during matchmaking");
+          }
+
+          pendingClients.delete(playerId);
+          playerMatchMap.delete(playerId);
+        }
+      }
+
+      return;
+    }
+
+    if (["matchmaking:playerNames", "matchmaking:playerNamesError", "matchmaking:opponentId", "matchmaking:opponentError"].includes(type)) {
+      for (const [userId, clientWs] of pendingClients.entries()) {
+        if ((String(userId) === message.player1Id || String(userId) === message.player2Id) && clientWs && clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify(message));
+        }
+      }
+      return;
+    }
+
+    if (type === "matchmaking:forfeitStatus") {
+      pendingClients.forEach((clientWs, userId) => {
+        if (playerMatchMap.get(String(userId)) === String(matchId) && clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify(message));
+        }
+      });
+      return;
+    }
+
+    console.warn(`⚠️ Unknown message from matchmaking: ${type}`, message);
+  });
+
+  ws.on("close", () => {
+    console.warn("🔌 Matchmaking socket closed");
+    matchmakingSocket = null;
+  });
+
+  ws.on("error", (err) => {
+    console.error("❌ Matchmaking WS error:", err);
+  });
+}
+
+
+// communication depuis MATCHMAKING
+// export function setMatchmakingSocket(ws: WebSocket) {
+//   matchmakingSocket = ws;
+
+//   ws.on("message", (raw) => {
+//     const message = JSON.parse(raw.toString());
+//     const { type, matchId, players } = message;
+
+//     if (["matchmaking:matchFound", "matchmaking:soloMatchReady", "matchmaking:tournamentMatchReady"].includes(type)) {
+//      // console.log("📦 pendingClients current content:", Array.from(pendingClients.keys()));
+
+//       players.forEach((player) => {
+//         const playerId = String(player.userId);
+//       //  console.log(`🔍 Getting pending client for user ${playerId}`);
+//         const clientWs = pendingClients.get(playerId);
+//        // console.log(`👉 Result of get for ${playerId}:`, clientWs);
+//         playerMatchMap.set(playerId, String(matchId));
+    
+//         if (clientWs && clientWs.readyState === WebSocket.OPEN) {
+//           const opponent = players.find((p) => String(p.userId) !== playerId);
+//           const payload = {
+//             type: 'matchmaking:matchFound',
+//             matchId,
+//             side: player.side,
+//             userId: player.userId,
+//             opponentId: opponent?.userId || null
+//           };
+
+//           clientWs.send(JSON.stringify(payload));
+    
+//           pendingClients.delete(playerId);
+//         } else {console.warn(`⚠️ No WS for userId=${playerId}`);}
+//       });
+    
+//       return;
+//     }
+    
+
+//     if (["matchmaking:playerNames", "matchmaking:playerNamesError",
+//             "matchmaking:opponentId", "matchmaking:opponentError"].includes(type)) {
+//         for (const [userId, clientWs] of pendingClients.entries()) {
+//             if ((String(userId) === message.player1Id || String(userId) === message.player2Id) && clientWs && clientWs.readyState === WebSocket.OPEN) {
+//                 clientWs.send(JSON.stringify(message));
+//                 }
+//             }
+//         return;
+//     }
+
+//     if (type === "matchmaking:forfeitStatus") {
+//       pendingClients.forEach((clientWs, userId) => {
+//         if (playerMatchMap.get(String(userId)) === String(matchId) && clientWs.readyState === WebSocket.OPEN) {
+//           clientWs.send(JSON.stringify(message));
+//         }
+//       });
+//       return;
+//     }
+
+//     console.warn(`⚠️ Unknown message from matchmaking: ${type}`, message);
+//   });
+
+//   ws.on("close", () => {
+//     console.warn("🔌 Matchmaking socket closed");
+//     matchmakingSocket = null;
+//   });
+
+//   ws.on("error", (err) => {
+//     console.error("❌ Matchmaking WS error:", err);
+//   });
+// }
+
+

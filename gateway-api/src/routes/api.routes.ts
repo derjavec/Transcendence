@@ -12,6 +12,7 @@ export default async function (app: FastifyInstance) {
     'game': { service: 'game', port: 4002 },
     'match': { service: 'matchmaking', port: 4004 },
     'friends': { service: 'friendzone', port: 4006 },
+    'tournament': { service: 'tournament', port: 4007}
   };
   // Routeur generique pour les services
   app.all('/:service/*', async (request, reply) => {

@@ -6,6 +6,7 @@ import { tokenBlacklist } from "./jwt-blacklist";
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import { setup2FADatabase } from "./2fa-database";
+import { tokenBlacklist } from "./jwt-blacklist";
 
 export default async function (app: FastifyInstance) {
   
@@ -66,8 +67,6 @@ export default async function (app: FastifyInstance) {
       
       // Verifier si l'utilisateur n'est pas deja connecté
       const isOnlineResponse = await fetch(`http://gateway-api:4000/api/users/isonline/${user.userId}`);
-      // console.log("🔍 Status de la réponse:", isOnlineResponse.status);
-      // console.log("🔍 Response OK:", isOnlineResponse.ok);
 
       if (!isOnlineResponse.ok) {
         console.error("❌ Erreur lors de la vérification du statut en ligne de l'utilisateur:", isOnlineResponse.statusText);
@@ -75,9 +74,6 @@ export default async function (app: FastifyInstance) {
       }
 
       const isOnlineData = await isOnlineResponse.json();
-      // console.log("🔍 Données complètes du statut:", JSON.stringify(isOnlineData, null, 2));
-      // console.log("🔍 Type de isOnlineData.status:", typeof isOnlineData.status);
-      // console.log("🔍 Valeur de isOnlineData.status:", isOnlineData.status);
 
       const isUserOnline = Boolean(isOnlineData.status);
       if (isUserOnline && isOnlineData) {
@@ -144,11 +140,8 @@ export default async function (app: FastifyInstance) {
         return reply.code(500).send({ error: "Failed to update user status" });
       }
       const onlineData = await onlineResponse.json();
-      // console.log("Statut de l'utilisateur mis à jour:", onlineData);
-      console.log("✅ Utilisateur connecté avec succès:", user.userId);
       
       // Répondre avec le token et l'ID utilisateur
-
       reply.send({ token, userId: user.userId, enable2FA: user.enable2FA });
     } catch (err) {
       reply.code(500).send({ error: "Authentication failed", details: err });
@@ -163,12 +156,10 @@ export default async function (app: FastifyInstance) {
       const authHeader = request.headers.authorization;
       if (authHeader  && authHeader.startsWith('Bearer ')) {
         token = authHeader.split(' ')[1];
-        console.log("Token from header:", token);
       }
       // Si le token n'est pas présent dans l'en-tête, vérifier dans le corps de la requête
       else if (request.body && request.body.token) {
         token = request.body.token;
-        console.log("Token from body:", token);
       }
 
       // Si le token n'est pas présent dans l'en-tête ou le corps, retourner une erreur
@@ -181,15 +172,37 @@ export default async function (app: FastifyInstance) {
       try {
         // Vérifier le token
         decoded = app.jwt.verify(token);
-        console.log("Decoded JWT payload:", decoded);
       } catch (err) {
-        // Si le token est déjà expiré ou invalide, pas besoin de le mettre en liste noire
+        // Si le token est déjà expiré ou invalide, l'ajouter quand même à la blacklist
+        try {
+          // Décoder le token sans vérifier l'expiration pour récupérer les infos
+          const decodedToken = app.jwt.decode(token);
+          if (decodedToken && decodedToken.jti) {
+            await tokenBlacklist.blacklist(token, decodedToken);
+            console.log(`✅ Expired/invalid token added to blacklist during logout: ${decodedToken.jti}`);
+            
+            // Mettre l'utilisateur en offline même si le token est expiré
+            const userId = decodedToken.userId;
+            if (userId) {
+              const response = await fetch(`http://gateway-api:4000/api/users/${userId}/offline`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId })
+              });
+              if (response.ok) {
+                console.log(`✅ User ${userId} marked as offline during logout with expired token`);
+              }
+            }
+          }
+        } catch (blacklistErr) {
+          console.error('❌ Erreur lors de l\'ajout du token expiré à la blacklist:', blacklistErr);
+        }
+        
         return reply.code(200).send({ message: "Déconnexion réussie" });
       }
       
       // Ajouter le token à la liste noire
       await tokenBlacklist.blacklist(token, decoded);
-      console.log("✅ Token ajouté à la liste noire avec succès");
       
       // Enregistrer le user en offline
       const userId = decoded.userId;
@@ -203,10 +216,8 @@ export default async function (app: FastifyInstance) {
         return reply.code(500).send({ error: "Échec de la mise à jour du statut de l'utilisateur" });
       }
       const data = await response.json();
-      console.log("Statut de l'utilisateur mis à jour:", data);
-      
+
       // Répondre avec un message de succès
-      
       reply.code(200).send({ message: "Déconnexion réussie" });
     } catch (err) {
       reply.code(500).send({ error: "Échec de la déconnexion", details: err.message });
@@ -223,7 +234,6 @@ export default async function (app: FastifyInstance) {
   
     try {
       const payload = app.jwt.verify(token);
-      // console.log("✅ JWT payload:", payload);
   
       if (Number(payload.userId) !== Number(userId)) {
         return reply.code(401).send({ success: false, message: "Invalid token-userId pair" });
@@ -236,20 +246,82 @@ export default async function (app: FastifyInstance) {
       // Check if the token is blacklisted
       const isBlacklisted = await tokenBlacklist.isBlacklisted(payload.jti);
       if (isBlacklisted) {
+        // Mettre l'utilisateur en offline si le token est révoqué
+        try {
+          await fetch(`http://gateway-api:4000/api/users/${userId}/offline`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId })
+          });
+          console.log(`✅ User ${userId} marked asoffline due to revoked token`);
+        } catch (error) {
+          console.error("❌ Erreur lors de la mise à jour du statut de l'utilisateur:", error);
+        }
+        // Répondre avec une erreur 401 si le token est révoqué
         return reply.code(401).send({ success: false, message: "Token is revoked" });
-    }
+      }
 
-      // // Check if the user has been invalidated
-      // if (checkUserInvalidation) {
-      //   const isInvalidated = await isUserInvalidated(userId);
-      //   if (isInvalidated) {
-      //     return reply.code(401).send({ success: false, message: "User has been invalidated" });
-      //   }
-      // }
-      
+      // 🔒 SÉCURITÉ : Vérifier si l'utilisateur est vraiment connecté en base
+      try {
+        const connectionStatusResponse = await fetch(`http://gateway-api:4000/api/users/isonline/${userId}`);
+        if (connectionStatusResponse.ok) {
+          const connectionData = await connectionStatusResponse.json();
+          const isUserOnline = Boolean(connectionData.status);
+          
+          if (!isUserOnline) {
+            console.warn(`🚨 SECURITY: User ${userId} has valid token but is offline in database - invalidating session`);
+            
+            // Invalider le token en l'ajoutant à la blacklist
+            await tokenBlacklist.blacklist(token, payload);
+            
+            return reply.code(401).send({ 
+              success: false, 
+              message: "Session invalidated - user not connected in database" 
+            });
+          }
+        } else {
+          console.error(`❌ Failed to check connection status for user ${userId}`);
+          // En cas d'erreur de vérification, invalider la session par sécurité
+          return reply.code(401).send({ 
+            success: false, 
+            message: "Unable to verify connection status" 
+          });
+        }
+      } catch (connectionErr) {
+        console.error(`❌ Error checking connection status for user ${userId}:`, connectionErr);
+        // En cas d'erreur de vérification, invalider la session par sécurité
+        return reply.code(401).send({ 
+          success: false, 
+          message: "Connection verification failed" 
+        });
+      }
+
       return reply.send({ success: true });
-    } catch (err: any) {
+   } catch (err: any) {
       console.error('💥 JWT verify failed', err.message);
+      
+      // Si le token est expiré, l'ajouter à la blacklist
+      if (err.message && err.message.includes('expired')) {
+        try {
+          // Décoder le token sans vérifier l'expiration pour récupérer les infos
+          const decodedToken = app.jwt.decode(token);
+          if (decodedToken && decodedToken.jti) {
+            await tokenBlacklist.blacklist(token, decodedToken);
+            console.log(`✅ Expired token added to blacklist: ${decodedToken.jti}`);
+            
+            // Mettre l'utilisateur en offline
+            await fetch(`http://gateway-api:4000/api/users/${userId}/offline`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId })
+            });
+            console.log(`✅ User ${userId} marked as offline due to expired token`);
+          }
+        } catch (blacklistErr) {
+          console.error('❌ Erreur lors de l\'ajout du token expiré à la blacklist:', blacklistErr);
+        }
+      }
+      
       return reply.code(401).send({ success: false, message: "Token validation failed" });
     }
   });  
@@ -261,7 +333,6 @@ export default async function (app: FastifyInstance) {
         // Vérification du token temporaire
         const authHeader = request.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
-          console.log("❌ Pas d'en-tête d'autorisation valide");
           return reply.code(401).send({error: "Token d'authentification requis" });
         }
 
@@ -270,11 +341,9 @@ export default async function (app: FastifyInstance) {
 
         // Vérification du Token Temporaire enregistré et comparaison
         if (!decoded.tempFor2FA) {
-          console.log("❌ Token n'est pas un token temporaire pour 2FA");
           return reply.code(401).send({ error: "Token temporaire invalide" });
         }
         request.user = { id: decoded.userId };
-        console.log("User ID extrait:", decoded.userId);
       } catch (tokenErr) {
         console.error("❌ Erreur lors de la vérification du token:", tokenErr);
         return reply.code(401).send({ error: "Token d'authentification invalide" });
@@ -376,7 +445,6 @@ export default async function (app: FastifyInstance) {
         }
         
         const activationResult = await response.json();
-        console.log("✅ 2FA activé avec succès:", activationResult);
   
         // Supprimer les données temporaires
         await setup2FADatabase.deleteTemporary2FAData(userId);
@@ -388,7 +456,6 @@ export default async function (app: FastifyInstance) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId })
       });
-      console.log("Response from user_management:", onlineResponse);
       // Vérifier la réponse de l'API
       if (!onlineResponse.ok) {
         // Capturer et afficher le corps de la réponse d'erreur
@@ -400,7 +467,6 @@ export default async function (app: FastifyInstance) {
         console.warn("Poursuite de l'authentification malgré l'échec de mise à jour du statut");
       } else {
         const onlineData = await onlineResponse.json();
-        console.log("✅ Statut de l'utilisateur mis à jour avec succès:", onlineData);
       }
       
       // Générer le token et terminer l'authentification comme avant
@@ -455,7 +521,6 @@ export default async function (app: FastifyInstance) {
     }
     // Récupérer l'utilisateur depuis son Id
     const response = await fetch(`http://gateway-api:4000/api/users/${userId}`);
-    console.log("Response from user_management:", response);
     if (!response.ok) {
       return reply.code(404).send({ error: "Utilisateur introuvable" });
     }
@@ -614,6 +679,10 @@ export default async function (app: FastifyInstance) {
       try {
         decoded = app.jwt.verify(token);
       } catch (tokenErr) {
+        decoded = app.jwt.decode(token);
+        if (decoded?.userId) {
+          await setUserOffline(decoded.userId);
+        }
         console.error("❌ Erreur lors de la vérification du token:", tokenErr);
         return reply.code(401).send({ error: "Token d'authentification invalide" });
       }
@@ -631,7 +700,6 @@ export default async function (app: FastifyInstance) {
       // Ajouter l'ancien token à la liste noire
       // Cette étape est importante car nous allons créer un nouveau token temporaire
       if (decoded.jti) {
-        console.log("Blacklisting old token before 2FA setup");
         await tokenBlacklist.blacklist(token, decoded);
       }
       
@@ -685,7 +753,6 @@ export default async function (app: FastifyInstance) {
       
       // Ajouter l'ancien token à la liste noire
       if (decoded.jti) {
-        console.log("Blacklisting old token after 2FA deactivation");
         await tokenBlacklist.blacklist(token, decoded);
       }
       
@@ -710,18 +777,6 @@ export default async function (app: FastifyInstance) {
   });
 
 }
-
-// // Fonction pour vérifier si l'utilisateur a été invalidé
-// async function isUserInvalidated(userId) {
-//   await tokenBlacklist.initialize();
-
-//   const result = await tokenBlacklist.db.get(
-//     'SELECT 1 FROM blacklisted_tokens WHERE user_id = ?',
-//     [userId]
-//   );
-
-//   return !!result;
-// }
 
 const generateUniqueId = () => {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);

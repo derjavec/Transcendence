@@ -1,33 +1,51 @@
-// servert.ts (matchmaking)
+// server.ts (matchmaking)
 import WebSocket from 'ws';
-// import sqlite3 from 'sqlite3';
-// import { open } from 'sqlite';
+import * as update from "./updateDB";
 import { randomUUID } from 'crypto';
-import * as update from "./updatedDB"
 
 const waitingPlayers: string[] = [];
-// let gatewaySocket: WebSocket | null = null;  // une seule ref pour parler avec gateway
+const pendingTournamentMatches = new Map<string, string>(); 
+
+async function connectToGateway(url: string): Promise<WebSocket> {
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+
+    const tryConnect = () => {
+      ws = new WebSocket(url);
+
+      ws.on('open', () => {
+        console.log(`🟢 Matchmaking service connected to ${url}`);
+        resolve(ws);
+      });
+
+      ws.on('error', () => {
+        console.warn(`⏳ Gateway not ready, retrying in 1s...`);
+        setTimeout(tryConnect, 1000);
+      });
+    };
+
+    tryConnect();
+  });
+}
 
 (async () => {
     await update.initDB();
-    const socket = new WebSocket("ws://gateway-ws:4500/ws");
+    const socket = await connectToGateway("ws://gateway-ws:4500/ws");
+    socket.send(JSON.stringify({ type: "registerService", service: "matchmaking" }));
 
-    socket.on('open', () => {
-        console.log("🟢 Matchmaking Service connected to Gateway");
-        socket.send(JSON.stringify({type: "registerService", service: "matchmaking"}));
-    })
 
     socket.on('message', async (rawMessage) => {
         const message = JSON.parse(rawMessage.toString());
 
         if (message.type === 'INIT_SOLO') {
             const userId = message.userId;
+            const mode = message.mode;
             const matchId = randomUUID();
-            const aiUserId = `AI-${matchId}`;
+            const aiUserId = mode === "soloIA" ? `AI-${matchId}` : "Player2";
 
-            //console.log(`✅ Solo match ${matchId} created for user ${userId} vs AI`);
+            console.log(`✅ Solo match ${matchId} created for user ${userId} vs AI`);
 
-            await update.NewSoloMatch(matchId, userId, aiUserId);
+            await update.NewSoloMatch(matchId, userId, aiUserId, mode);
 
             if (socket.readyState === WebSocket.OPEN) {
                 const messageToSend = {
@@ -40,7 +58,7 @@ const waitingPlayers: string[] = [];
                 };
                 // console.log(`📤 Sending soloMatchReady to gateway:`, messageToSend);
                 socket.send(JSON.stringify(messageToSend));
-                console.log(`📤 Sent soloMatchReady to gateway`);
+                // console.log(`📤 Sent soloMatchReady to gateway`);
             } else {
                 console.warn("⚠️ Gateway socket not ready, cannot send soloMatchReady");
             }
@@ -54,9 +72,9 @@ const waitingPlayers: string[] = [];
             if (waitingPlayers.length >= 2) {
                 const [p1, p2] = waitingPlayers.splice(0, 2);
                 const matchId = randomUUID();
-                console.log(`✅ Match ${matchId} created: ${p1} vs ${p2}`);
+                // console.log(`✅ Match ${matchId} created: ${p1} vs ${p2}`);
 
-                await update.NewMultiPlayerMatch(matchId, p1, p2);
+                await update.NewOneToOneMatch(matchId, p1, p2);
 
                 if (socket.readyState === WebSocket.OPEN) {
                     socket.send(JSON.stringify({
@@ -73,7 +91,33 @@ const waitingPlayers: string[] = [];
                 }
             }
         }
-
+        if (message.type === 'JOIN_TOURNAMENT') {
+            const { player1Id, player2Id } = message;
+            const key = [player1Id, player2Id].sort().join("_");
+            let matchId: string;
+        
+            if (pendingTournamentMatches.has(key)) {
+                matchId = pendingTournamentMatches.get(key)!;
+                return;
+            } else {
+                matchId = randomUUID();
+                pendingTournamentMatches.set(key, matchId);
+                await update.NewMultiPlayerMatch(matchId, player1Id, player2Id);
+            }
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: "matchmaking:tournamentMatchReady",
+                    matchId,
+                    players: [
+                        { userId: player1Id, side: "left" },
+                        { userId: player2Id, side: "right" }
+                    ]
+                }));
+            } else {
+                console.warn(`❌ No se pudo enviar tournamentMatchReady: socket cerrado`); //DEBUG
+            }
+        }
+        
         if (message.type === 'GET_NAMES') {
             const { matchId } = message;
             try {
@@ -161,26 +205,28 @@ const waitingPlayers: string[] = [];
             const userId = message.userId;
             const index = waitingPlayers.indexOf(userId);
             if (index !== -1) {
-                waitingPlayers.splice(index, 1);
-                console.log(`🚪 Player ${userId} removed from matchmaking queue`);
-                return;
+              waitingPlayers.splice(index, 1);
+              return;
             }
-
+          
             const match = await update.getMatchByUserId(userId);
             if (!match) {
-                // console.log(`🟡 No active match for user ${userId}, skipping disconnect`); //DEBUG
-                return;
+              return;
             }
-
+          
+            for (const [key, value] of pendingTournamentMatches.entries()) {
+              const [id1, id2] = key.split("_");
+              if (id1 === String(userId) || id2 === String(userId)) {
+                pendingTournamentMatches.delete(key);
+              }
+            }
+          
             const opponent = await update.getOpponent(userId);
-            if (!opponent) {
-                console.warn(`⚠️ No opponent found for user ${userId}`);
-                return;
-            }
-
+            if (!opponent) return;
+          
             await update.updateMatchStats(match.matchId, opponent.id, userId, 1, 0, "forfeit");
             console.log(`🏁 Match ${match.matchId} ended by disconnect. Winner: ${opponent.id}`);
-        }
+          }
 
         if (message.type === 'END_MATCH') {
             const { matchId, winnerId, loserId, winnerScore, loserScore } = message;
@@ -191,10 +237,14 @@ const waitingPlayers: string[] = [];
                 return;
             }
 
+            for (const [key, val] of pendingTournamentMatches.entries()) {
+                if (val === matchId) {
+                    pendingTournamentMatches.delete(key);
+                }
+            }
             await update.updateMatchStats(matchId, winnerId, loserId, winnerScore, loserScore, "completed");
             console.log(`🏁 Match ${matchId} ended normally. Winner: ${winnerId} (${winnerScore}-${loserScore})`);
         }
     });
 
 })();
-

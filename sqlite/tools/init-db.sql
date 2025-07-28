@@ -113,4 +113,41 @@ VALUES
 (2, 3, 'rejected');  -- Bob a envoyé une demande à Charlie (rejetée)
 
 
+-- 9. tournaments: Stocke les informations de chaque tournoi
+CREATE TABLE IF NOT EXISTS tournaments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournamentName TEXT NOT NULL,
+  creatorId INTEGER NOT NULL,
+  participants INTEGER NOT NULL CHECK(participants BETWEEN 4 AND 8),
+  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  isActive INTEGER DEFAULT 1, -- 1 = actif, 0 = terminé
+  winnerId INTEGER DEFAULT NULL,
+  status TEXT DEFAULT 'waiting',
+  FOREIGN KEY (creatorId) REFERENCES users(userId)
+);
+
+CREATE TABLE IF NOT EXISTS tournament_registrations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournamentId INTEGER NOT NULL,
+  userId INTEGER NOT NULL,
+  registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(tournamentId, userId),
+  FOREIGN KEY (tournamentId) REFERENCES tournaments(id),
+  FOREIGN KEY (userId) REFERENCES users(userId)
+);
+
+CREATE TABLE IF NOT EXISTS tournament_matches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournamentId INTEGER NOT NULL,
+  round INTEGER NOT NULL,
+  player1Id INTEGER NOT NULL,
+  player2Id INTEGER,
+  winnerId INTEGER,
+  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (tournamentId) REFERENCES tournaments(id),
+  FOREIGN KEY (player1Id) REFERENCES users(userId),
+  FOREIGN KEY (player2Id) REFERENCES users(userId),
+  FOREIGN KEY (winnerId) REFERENCES users(userId)
+);
+
 -- The script uses SQLite syntax and is designed to be executed in an SQLite environment.

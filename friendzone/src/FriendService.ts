@@ -28,6 +28,11 @@ export class FriendService {
 			filename: path.join('/app/shared', 'database.db'),
 			driver: sqlite3.Database
 		});
+		// eviter data race 
+		await this.db.exec("PRAGMA journal_mode = WAL"); // Write-Ahead Logging -> envoi les writes dans un fichier de log
+		await this.db.exec("PRAGMA synchronous = NORMAL"); // mode d'ecriture NORMAL = bon equilibre entre securite et vitesse
+		await this.db.configure("busyTimeout", 5000); // attendre 5secs avant de lancer l'erreur SQLITE_BUSY
+
 		
 		this.initialized = true;
 		} catch (error) {

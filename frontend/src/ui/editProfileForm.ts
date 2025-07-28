@@ -32,7 +32,7 @@ export async function editProfileForm(userId: number, userData:{name:string; ema
     </form>
   `;
 
-  const container = document.querySelector(".mx-auto.text-left");
+  const container = document.getElementById("profileDetails");
   if (!container) return;
   container.innerHTML = formHTML;
 

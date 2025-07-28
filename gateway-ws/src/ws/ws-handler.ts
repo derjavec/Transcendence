@@ -4,10 +4,10 @@ import { SocketStream } from "@fastify/websocket";
 import { IncomingMessage } from "http";
 import * as Auth from "./ws-auth"; 
 import * as Game from "./ws-game";
-import * as IA from "../proxy/proxy-ia";
+// import * as IA from "../proxy/proxy-ia";
+import * as AI from "./ws-ia";
 import * as Matchmaking from "./ws-matchmaking";
-// import * as Tournament from "./ws-tournament";
-
+import * as Tournament from "./ws-tournament";
 
 const activeConnections = new Map(); // pour stocker le nombre de WS par IP
 
@@ -27,31 +27,44 @@ export default async function wsHandler(server: FastifyInstance) {
     const socket = connection; // real WebSocket connection
     let userId: string | null = null;
     let authenticated = false;
+    let service = false;
 
     socket.on("message", async (rawMessage) => {
       try {
         // console.log(`📩 Raw WebSocket message received: ${rawMessage.toString()}`);
         const message = JSON.parse(rawMessage.toString());
+        if (service)
+            return ;
         if (message.type === "registerService") {
-
+          service = true;
+         // console.log("📩 registerService received:", message);
           if (message.service === "matchmaking") {
-            // console.log("📡 Matchmaking service connected");
             Matchmaking.setMatchmakingSocket(socket);
             return;
           }
-          // if (message.service === "tournament") {
-          //   console.log("📡 Tournament service connected");
-          //   Tournament.setTournamentSocket(socket);
-          //   return;
-          // }
-        }
+          
+          if(message.service === "tournament") {
+            Tournament.setTournamentSocket(socket);
+            return;
+          }
 
+          if(message.service === "game") {
+            Game.setGameSocket(socket);
+            return;
+          }
+
+          if(message.service === "AI") {
+            AI.setAISocket(socket);
+            return;
+          }
+        }
         if (message.type === "auth") {
           const result = await Auth.handleAuth(message, socket);
           authenticated = result.success;
           userId = result.userId;
           return;
         }
+        // console.log("incoming message: ", message);
 
         if (!authenticated) {
           return socket.send(JSON.stringify({
@@ -68,8 +81,12 @@ export default async function wsHandler(server: FastifyInstance) {
           Matchmaking.handleMatchmakingMessage(message, socket, userId);
           // console.log("sending to matchmaking: ", message);
         }
-        else if (message.type.startsWith("IA:")) {
-          IA.handleIAMessage(message, userId);
+        else if (message.type.startsWith("AI:")) {
+          const aiUserId = await Matchmaking.getOpponentId(userId);
+          AI.handleIAMessage(message, socket, aiUserId);
+        }
+        else if(message.type.startsWith("tournament:")) {
+          Tournament.handleTournamentMessage(message, socket, userId);
         }
 
       } catch (err) {
@@ -77,8 +94,12 @@ export default async function wsHandler(server: FastifyInstance) {
       }
     });
     socket.on("close", () => {
-      if (userId) 
-        Game.destroyUserSocket(userId); // necesaire pour le WS de game qui sont persistent et utilisent une Map
+      //nettoyer les Maps
+      if (userId) {
+        Game.onClientDisconnect(userId);
+        Matchmaking.onClientDisconnect(userId);
+        Tournament.onClientDisconnect(userId);
+      }
       userId = null;
       authenticated = false;
       

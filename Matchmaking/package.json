@@ -2,7 +2,7 @@
     "name": "matchmaking",
     "version": "3.0.1",
     "scripts": {
-      "dev": "ts-node-dev --transpile-only src/server.ts"
+      "dev": "ts-node-dev --transpile-only src/ws-client.ts"
     },
     "dependencies": {
       "fastify": "^5.0.0",

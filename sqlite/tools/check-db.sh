@@ -13,7 +13,7 @@ echo '🔍 Checking database structure...'
 TABLES=$(sqlite3 /app/shared/database.db "SELECT name FROM sqlite_master WHERE type='table'")
 
 # Liste des tables requises
-REQUIRED_TABLES="users user_stats blacklisted_tokens temp_2fa_setup friends friend_requests matches"
+REQUIRED_TABLES="users user_stats blacklisted_tokens temp_2fa_setup friend_requests matches"
 
 # Vérifier chaque table requise
 MISSING=0
@@ -33,3 +33,6 @@ if [ $MISSING -eq 1 ]; then
 else
   echo '✅ database.db has all required tables'
 fi
+
+echo '🔄 Resetting all player_connection statuses to offline...'
+sqlite3 /app/shared/database.db "UPDATE player_connection SET status = 0;"

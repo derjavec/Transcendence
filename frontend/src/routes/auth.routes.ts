@@ -55,6 +55,7 @@ export async function logout(token: string): Promise<void> {
   if (!response.ok) {
     throw new Error("Logout failed");
   }
+  console.log("logout OK", token);
 }
 
 // Validation du token d'authentification

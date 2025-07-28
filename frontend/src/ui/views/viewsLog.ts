@@ -1,10 +1,10 @@
 //views.ts
-import { connectWebSocket } from "../ws/ws-client.js";
-import { navigate } from "../router.js";
+import { connectWebSocket } from "../../ws/ws-client.js";
+import { navigate } from "../../router.js";
 import { 
   registerUser, 
   login
-} from "../routes/auth.routes.js";
+} from "../../routes/auth.routes.js";
 
 export function registerView() {
   const app = document.getElementById("app");
@@ -66,8 +66,6 @@ export function registerView() {
     submitButton.textContent = "Creating...";
 
     try {
-      console.log("Attempting to register user:", { name, email, enable2FA });
-      
       const response = await registerUser(name, email, password, enable2FA);
       console.log("✅ Account created:", response);
       
@@ -80,7 +78,6 @@ export function registerView() {
         alert("Error: No authentication token received for 2FA setup");
         navigate("/login");
       } else {
-        alert("Account created successfully! Please login.");
         navigate("/login");
       }
     } catch (err) {
@@ -449,7 +446,7 @@ export function verify2FAView() {
       // Connexion WebSocket avec le nouveau token
       // await connectWebSocket();
       
-      const redirectTo = sessionStorage.getItem("postLoginRedirect") || "/tournament";
+      const redirectTo = sessionStorage.getItem("postLoginRedirect") || "/";
       sessionStorage.removeItem("postLoginRedirect");
       navigate(redirectTo);
     } catch (error) {
@@ -519,7 +516,7 @@ export function verify2FAView() {
       // Connexion WebSocket avec le nouveau token
       await connectWebSocket();
       
-      const redirectTo = sessionStorage.getItem("postLoginRedirect") || "/tournament";
+      const redirectTo = sessionStorage.getItem("postLoginRedirect") || "/";
       sessionStorage.removeItem("postLoginRedirect");
       navigate(redirectTo);
     } catch (error) {

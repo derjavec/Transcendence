@@ -33,7 +33,7 @@ export function initMatrixBackground(): void {
     if (!ctx) 
       return;
     // dessiner le fond noir
-    ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     // definir le vert matrix des lettres
     ctx.fillStyle = "#00FF41";

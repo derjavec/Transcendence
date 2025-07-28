@@ -1,26 +1,31 @@
 //router.ts
-import * as View from "./ui/views.js";
-import * as ViewLogs from "./ui/viewsLog.js";
-import * as ViewProfile from "./ui/viewProfile.js";
+import * as ViewSettings from "./ui/views/viewSettings.js";
+import * as ViewHome from "./ui/views/viewHome.js";
+import * as ViewSolo from "./ui/views/viewSolo.js";
+import * as ViewTournament from "./ui/views/viewOneToOne.js";
+import * as ViewLogs from "./ui/views/viewsLog.js";
+import * as ViewProfile from "./ui/views/viewProfile.js";
 import { validateToken,  } from "./routes/auth.routes.js";
 import { initAuthButton } from "./ui/authBtn.js";
 import { socket } from "./ws/ws-client.js";
 import { stopGame } from "./ui/render.js";
-import { gameDisconnect } from "./ws/ws-actions.js";
 import { loadTranslations, updateNavBarText } from "./i18n.js"; 
 import { saveUserSettings, getUserSettings } from "./routes/user.routes.js";
 import { t } from "./i18n.js";
+import { TournamentView } from "./ui/views/multiTournament/multiTournamentView.js";
+import { tournamentDisconnect } from "./ws/ws-actions.js";
 
 const routes: Record<string, () => void> = {
-  "/": View.homeView,
+  "/": ViewHome.homeView,
   "/register": ViewLogs.registerView,
   "/login": ViewLogs.loginView,
-  "/solo": View.soloView,
-  "/tournament": View.tournamentView,
+  "/solo": ViewSolo.soloView,
+  "/1to1": ViewTournament.OneToOneView,
   "/profile": ViewProfile.profileView,
-  "/settings": View.settingsView,
+  "/settings": ViewSettings.settingsView,
   "/create2fa": ViewLogs.create2FAView,
-  "/verify2fa": ViewLogs.verify2FAView
+  "/verify2fa": ViewLogs.verify2FAView,
+  "/Tournament": TournamentView
 };
 
 const publicRoutes = ["/", "/login", "/register", "/create2fa", "/verify2fa"];
@@ -39,7 +44,6 @@ export async function render() {
 
   const token = sessionStorage.getItem("authToken");
   const userId = Number(sessionStorage.getItem("userId"));
-
   // Langue et mode par défaut
   let currentLang = "en";
   let mode = "dynamic";
@@ -106,11 +110,13 @@ export async function render() {
     app.innerHTML = "<h1>404 Not Found</h1>";
   });
 
-  const leavingGameView = ["/solo", "/tournament"].includes(previousPath);
+  const leavingGameView = ["/solo", "/1to1", "/Tournament"].includes(previousPath);
 
-  if ((leavingGameView || !["/solo", "/tournament"].includes(path)) && socket?.readyState === WebSocket.OPEN)  {
-    console.log("🔌 Leaving solo or tournament → closing game completely");
+  if ((leavingGameView || !["/solo", "/1to1", "/Tournament"].includes(path)) && socket?.readyState === WebSocket.OPEN)  {
+    console.log("🔌 Leaving solo or tournament → closing game completely"); //DEBUG
     stopGame();
+    if (previousPath === "/Tournament")
+      tournamentDisconnect(socket);
 		socket.close(1000, "User requested disconnect"); // 1000 = Normal closure
   } 
 
@@ -170,17 +176,7 @@ export async function render() {
   }
 }
 
-
 export function navigate(path: string) {
   window.history.pushState({}, "", path);
   render();
 }
-
-window.addEventListener("beforeunload", () => {
-  if (socket?.readyState === WebSocket.OPEN) {
-    console.log("🔌 Closing socket on unload");
-    gameDisconnect(socket);
-    
-		socket.close(1000, "User requested disconnect"); // 1000 = Normal closure
-  }
-});
