@@ -1,0 +1,239 @@
+
+services:
+# Frontend service
+  frontend:
+    container_name: frontend
+    build: ./frontend
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    depends_on:
+      - gateway-api
+      - gateway-ws
+    expose:
+     - "3000"
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://gateway-api:4000/health/gateway"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # restart: unless-stopped
+
+# gateway-api service    
+  gateway-api:
+    # container_name: gateway-api
+    build: ./gateway-api
+    env_file:
+    - .env
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    expose:
+     - "4000"
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://gateway-api:4000/gateway"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # restart: unless-stopped
+
+
+# gateway-ws service    
+  gateway-ws:
+    container_name: gateway-ws
+    build: ./gateway-ws
+    env_file:
+    - .env
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    expose:
+     - "4500"
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://gateway-ws:4500/health/gateway"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # restart: unless-stopped
+
+# # SQLite service
+  sqlite:
+    container_name: sqlite
+    build: ./sqlite
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    depends_on:
+      - gateway-api
+      - gateway-ws
+    init: true
+
+# UserManagement service
+  user_management:
+    container_name: userManagement
+    build: ./userManagement
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    depends_on:
+      - gateway-api
+      - gateway-ws
+      - sqlite
+    expose:
+      - "4001"
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://userManagement:4001/health"]
+      interval: 300s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  security:
+    container_name: security
+    build: ./security
+    env_file:
+    - .env
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    expose:
+      - "4003"
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://gateway-api:4000/health/gateway"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Pong_Logic service
+  game:
+    container_name: game
+    build: ./game
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    depends_on:
+      - gateway-api
+      - gateway-ws
+    expose:
+      - "4002"
+    init: true
+    # restart: unless-stopped
+    
+  ia_bot:
+    container_name: ia_bot
+    build: ./IA
+    networks:
+      - pong
+    depends_on:
+      - game
+    volumes:
+      - shared_data:/app/shared
+    expose:
+      - "4005"
+    init: true
+
+  matchmaking:
+    container_name: matchmaking
+    build: ./Matchmaking
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    depends_on:
+      - gateway-api
+      - gateway-ws
+    expose:
+      - "4004"
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://gateway-api:4000/health/gateway"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# FriendZone
+  friendzone:
+    container_name: friendzone
+    build: ./friendzone
+    networks:
+      - pong
+    volumes:
+      - shared_data:/app/shared
+    depends_on:
+      - gateway-api
+      - gateway-ws
+      - sqlite
+    expose:
+      - "4006"
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://friendzone:4006/health"]
+      interval: 300s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Nginx service
+  nginx:
+    container_name: nginx
+    env_file:
+      - .env
+    build:
+      context: ./nginx
+      args:
+        CERT_FOLDER: ${CERT_FOLDER}
+        CERTIFICATE: ${CERTIFICATE}
+        KEY: ${KEY}
+        COUNTRY: ${COUNTRY}
+        STATE: ${STATE}
+        LOCALITY: ${LOCALITY}
+        ORGANIZATION: ${ORGANIZATION}
+        UNIT: ${UNIT}
+        COMMON_NAME: ${COMMON_NAME}
+    networks:
+      - pong
+    ports:
+      - "8080:80" # HTTP
+      - "8443:443" # HTTPS (externe: 8443 --> interne: 443)
+    volumes:
+      - shared_data:/app/shared
+      - certs:/etc/nginx/certs
+    depends_on:
+      - gateway-api
+      - gateway-ws
+      - frontend
+    init: true
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "localhost"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Networks
+networks:
+  pong:
+    driver: bridge
+
+# Volumes
+volumes:
+  shared_data:
+  certs:

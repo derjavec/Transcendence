@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('/PressStart2P-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.blink-loader {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 1rem 0;
+}
+
+.blip {
+  width: 1rem;
+  height: 1rem;
+  background-color: #00FF41;
+  animation: blink 1.2s infinite step-end;
+}
+
+.blip:nth-child(1) { animation-delay: 0s; }
+.blip:nth-child(2) { animation-delay: 0.15s; }
+.blip:nth-child(3) { animation-delay: 0.3s; }
+.blip:nth-child(4) { animation-delay: 0.45s; }
+.blip:nth-child(5) { animation-delay: 0.6s; }
+
+
+body {
+  @apply font-arcade bg-pongDark text-gray-400 text-sm;
+}
+
+input, select, button {
+  @apply bg-pongLight text-gray-400 border border-matrix px-2 py-1 rounded;
+}
+
+.btn {
+  @apply bg-pongLight text-matrix border border-matrix px-3 py-1 rounded transition hover:bg-pongMid;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white border border-red-500 hover:bg-red-700;
+}
+
+.glow {
+  @apply text-matrix drop-shadow-[0_0_4px_#00FF41];
+}

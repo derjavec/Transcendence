@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="theme-color" content="#00FF41" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pong Game</title>
+    <script type="module" src="/main.js"></script>
+    <link rel="stylesheet" href="/output.css" />
+  </head>
+  <body class="relative overflow-hidden">
+
+    <nav class="relative z-10 bg-pongLight py-2 px-2 shadow-lg border-b-2 border-matrix">
+      <div class="container mx-auto flex justify-between items-center">
+        <div class="text-2xl font-arcade text-matrix">Transcendence</div>
+        <div class="space-x-6 font-arcade">
+          <a href="/" data-link id="nav-home" class="text-pongGray hover:text-matrix transition">Home</a>
+          <a href="/solo" data-link id="nav-solo" class="text-pongGray hover:text-matrix transition">Solo</a>
+          <a href="/tournament" data-link id="nav-tournament" class="text-pongGray hover:text-matrix transition">Tournament</a>
+          <a href="/profile" data-link  id="nav-profile" class="text-pongGray hover:text-matrix transition">👤</a>
+          <a href="/settings" data-link id="nav-settings" class="text-pongGray hover:text-matrix transition">⛭</a>
+          <button id="authBtn" class="bg-matrix text-black px-3 py-1 rounded hover:bg-green-400 transition"></button>
+
+          <!-- <div class="relative"> -->
+            <select id="languageSelect" class="text-pongGray hover:text-matrix transition">
+              <option value="en">🇬🇧 English</option>
+              <option value="fr">🇫🇷 Français</option>
+              <option value="es">🇪🇸 Español</option>
+            </select>
+          <!-- </div> -->
+
+        </div>
+      </div>
+    </nav>
+    
+    <main class="relative z-10 container mx-auto p-6 flex justify-center items-start min-h-screen">
+      <div id="app" class="bg-pongMid p-6 rounded shadow-lg w-full max-w-3xl min-h-[300px]">
+      </div>
+    </main>
+
+  </body>
+</html>

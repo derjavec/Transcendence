@@ -1,0 +1,24 @@
+{
+  "name": "gateway-ws",
+  "version": "1.2.1",
+  "description": "gateway-ws Fastify in Docker",
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "ts-node-dev --transpile-only --quiet src/server.ts"
+  },
+  "dependencies": {
+    "@fastify/jwt": "9.1.0",
+    "@fastify/rate-limit": "^10.2.2",
+    "@fastify/websocket": "^11.0.2",
+    "@fastify/compress": "^8.0.0",
+    "axios": "^1.5.0",
+    "fastify": "^5.2.2"
+  },
+  "devDependencies": {
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
